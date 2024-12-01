@@ -45,3 +45,39 @@ jobs:
         with:
           components: clippy
       - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    container:
+      image: xd009642/tarpaulin
+      options: --security-opt seccomp=unconfined
+    steps:
+      - uses: actions/checkout@v3
+      - name: Generate code coverage
+        run: |
+          cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          fail_ci_if_error: true
+
+  bench:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run benchmark
+        run: cargo bench
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Rust Benchmark
+          tool: 'cargo'
+          output-file-path: target/criterion/report/index.html
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: true

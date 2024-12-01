@@ -15,3 +15,20 @@ serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
 thiserror = "2.0.3"
 tokio = { version = "1.41.1", features = ["full"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[workspace.metadata]
+html_root_url = "https://docs.rs/quantbox-rs"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Chen Hu <chen.hu@email.com>"]
+edition = "2021"
+description = "A quantitative trading framework in Rust"
+documentation = "https://docs.rs/quantbox-rs"
+readme = "README.md"
+homepage = "https://github.com/nehcuh/quantbox-rs"
+repository = "https://github.com/nehcuh/quantbox-rs"
+license = "MIT OR Apache-2.0"
+keywords = ["quantitative", "trading", "finance", "backtesting"]
+categories = ["finance", "simulation"]
