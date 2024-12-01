@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = [
+    "qb-core",
+    "qb-backtest",
+    "qb-data",
+    "qb-risk",
+    "qb-strategies",
+    "qb-trading",
+]
+
+[workspace.dependencies]
+chrono = "0.4.38"
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.133"
+thiserror = "2.0.3"
+tokio = { version = "1.41.1", features = ["full"] }

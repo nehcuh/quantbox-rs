@@ -1,0 +1,6 @@
+# quantbox/.gitignore
+/target
+Cargo.lock
+**/*.rs.bk
+.idea/
+.vscode/
