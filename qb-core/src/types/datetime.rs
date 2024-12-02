@@ -15,7 +15,11 @@ use chrono::{Datelike, Duration, NaiveDate, Timelike};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::{Ord, PartialOrd};
+use std::collections::HashMap;
+use std::fs;
 use std::ops::Sub;
+use std::sync::OnceLock;
+use toml::Value;
 
 pub use crate::errors::DateErrorKind;
 pub use crate::{QBError, QBResult};
@@ -1095,6 +1099,102 @@ impl IntoQBDate for NaiveDate {
 impl IntoQBDate for QBDate {
     fn into_qbdate(self) -> QBResult<QBDate> {
         Ok(self)
+    }
+}
+
+/// Global trading calendar instance
+static TRADING_CALENDAR: OnceLock<TradingCalendar> = OnceLock::new();
+
+/// Trading calendar that manages trading dates for different exchanges
+#[derive(Debug)]
+pub struct TradingCalendar {
+    /// Trading dates for each exchange, stored as a map of exchange code to a set of dates
+    trading_dates: HashMap<String, Vec<QBDate>>,
+}
+
+impl TradingCalendar {
+    /// Initialize the trading calendar from a TOML configuration file
+    pub fn init(config_path: &str) -> QBResult<()> {
+        if TRADING_CALENDAR.get().is_some() {
+            return Ok(());
+        }
+
+        let content = fs::read_to_string(config_path).map_err(|e| QBError::DateError {
+            kind: DateErrorKind::ParseError,
+            details: format!("Failed to read calendar config: {}", e),
+        })?;
+
+        let config: Value = toml::from_str(&content).map_err(|e| QBError::DateError {
+            kind: DateErrorKind::ParseError,
+            details: format!("Failed to parse calendar config: {}", e),
+        })?;
+
+        let mut calendar = TradingCalendar {
+            trading_dates: HashMap::new(),
+        };
+
+        if let Some(dates) = config.get("trade_dates").and_then(|v| v.as_table()) {
+            for (exchange, dates) in dates {
+                if let Some(dates) = dates.as_array() {
+                    let dates: Vec<QBDate> = dates
+                        .iter()
+                        .filter_map(|d| d.as_integer().and_then(|s| s.into_qbdate().ok()))
+                        .collect();
+                    calendar.trading_dates.insert(exchange.clone(), dates);
+                }
+            }
+        }
+
+        TRADING_CALENDAR
+            .set(calendar)
+            .map_err(|_| QBError::DateError {
+                kind: DateErrorKind::ParseError,
+                details: format!("Failed to set global trading calendar"),
+            })?;
+
+        Ok(())
+    }
+
+    /// Get the global trading calendar instance
+    pub fn instance() -> Option<&'static TradingCalendar> {
+        TRADING_CALENDAR.get()
+    }
+
+    /// Check if a given date is a trading day for the specified exchange
+    pub fn is_trading_day(&self, exchange: &str, date: QBDate) -> bool {
+        self.trading_dates
+            .get(exchange)
+            .map(|dates| dates.binary_search(&date).is_ok())
+            .unwrap_or(false)
+    }
+
+    /// Find the nearest trading day for the specified exchange and date
+    /// If the date is already a trading day, returns the same date
+    /// If search_next is true, finds the next trading day; otherwise finds the previous trading day
+    pub fn nearest_trading_day(
+        &self,
+        exchange: &str,
+        date: QBDate,
+        search_next: bool,
+    ) -> Option<QBDate> {
+        if let Some(dates) = self.trading_dates.get(exchange) {
+            match dates.binary_search(&date) {
+                Ok(_) => Some(date),
+                Err(idx) => {
+                    if search_next {
+                        dates.get(idx).copied()
+                    } else {
+                        if idx > 0 {
+                            dates.get(idx - 1).copied()
+                        } else {
+                            None
+                        }
+                    }
+                }
+            }
+        } else {
+            None
+        }
     }
 }
 
