@@ -1196,6 +1196,54 @@ impl TradingCalendar {
             None
         }
     }
+
+    pub fn nearest_trading_day_opts(
+        &self,
+        exchange: &str,
+        date: QBDate,
+        opts: SearchOpts,
+    ) -> Option<QBDate> {
+        // 如果包含当前日期，直接使用现有的 nearest_trading_day
+        if opts.include {
+            return self.nearest_trading_day(exchange, date, opts.search_next);
+        }
+
+        let dates = self.trading_dates.get(exchange)?;
+
+        match dates.binary_search(&date) {
+            Ok(idx) => {
+                if opts.search_next {
+                    // 向后搜索：获取下一个交易日
+                    dates.get(idx + 1).copied()
+                } else {
+                    // 向前搜索：获取前一个交易日
+                    if idx > 0 {
+                        dates.get(idx - 1).copied()
+                    } else {
+                        None
+                    }
+                }
+            }
+            Err(idx) => {
+                if opts.search_next {
+                    // 向后搜索：获取插入位置的日期
+                    dates.get(idx).copied()
+                } else {
+                    // 向前搜索：获取插入位置前一个日期
+                    if idx > 0 {
+                        dates.get(idx - 1).copied()
+                    } else {
+                        None
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub struct SearchOpts {
+    include: bool,
+    search_next: bool,
 }
 
 pub fn get_days_in_month(year: u32, month: u32) -> u32 {
@@ -1219,7 +1267,6 @@ pub fn is_leap_year(year: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
 
     #[test]
     fn test_qbdate_creation() {
@@ -1327,5 +1374,104 @@ mod tests {
         // Test sub months
         let prev_month = date.sub_months(1).unwrap();
         assert_eq!(prev_month.as_u32(), 20221231); // January 31 -> December 31
+    }
+
+    #[test]
+    fn test_nearest_trading_day_opts() {
+        let mut calendar = TradingCalendar {
+            trading_dates: HashMap::new(),
+        };
+        let exchange = "SHSE";
+        
+        // 使用实际的交易日历数据（按升序排列）
+        let trading_dates: Vec<QBDate> = vec![
+            QBDate::from_u32(20240923).unwrap(),
+            QBDate::from_u32(20240924).unwrap(),
+            QBDate::from_u32(20240925).unwrap(),
+            QBDate::from_u32(20240926).unwrap(),
+            QBDate::from_u32(20240927).unwrap(),
+            QBDate::from_u32(20240930).unwrap(),
+        ];
+        calendar.trading_dates.insert(exchange.to_string(), trading_dates);
+
+        // Case 1: 测试 include = true 的情况（当前日期是交易日）
+        let opts = SearchOpts {
+            include: true,
+            search_next: true,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts(exchange, QBDate::from_u32(20240925).unwrap(), opts),
+            Some(QBDate::from_u32(20240925).unwrap())
+        );
+
+        // Case 2: 测试非交易日，向前搜索（周末情况）
+        let opts = SearchOpts {
+            include: false,
+            search_next: true,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts(exchange, QBDate::from_u32(20240928).unwrap(), opts),
+            Some(QBDate::from_u32(20240930).unwrap())
+        );
+
+        // Case 3: 测试非交易日，向后搜索（周末情况）
+        let opts = SearchOpts {
+            include: false,
+            search_next: false,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts(exchange, QBDate::from_u32(20240928).unwrap(), opts),
+            Some(QBDate::from_u32(20240927).unwrap())
+        );
+
+        // Case 4: 测试交易日，不包含当前日期，向前搜索
+        let opts = SearchOpts {
+            include: false,
+            search_next: true,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts(exchange, QBDate::from_u32(20240925).unwrap(), opts),
+            Some(QBDate::from_u32(20240926).unwrap())
+        );
+
+        // Case 5: 测试交易日，不包含当前日期，向后搜索
+        let opts = SearchOpts {
+            include: false,
+            search_next: false,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts(exchange, QBDate::from_u32(20240925).unwrap(), opts),
+            Some(QBDate::from_u32(20240924).unwrap())
+        );
+
+        // Case 6: 测试边界情况 - 第一个交易日
+        let opts = SearchOpts {
+            include: false,
+            search_next: false,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts(exchange, QBDate::from_u32(20240923).unwrap(), opts),
+            None
+        );
+
+        // Case 7: 测试边界情况 - 最后一个交易日
+        let opts = SearchOpts {
+            include: false,
+            search_next: true,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts(exchange, QBDate::from_u32(20240930).unwrap(), opts),
+            None
+        );
+
+        // Case 8: 测试无效交易所
+        let opts = SearchOpts {
+            include: false,
+            search_next: true,
+        };
+        assert_eq!(
+            calendar.nearest_trading_day_opts("INVALID", QBDate::from_u32(20240925).unwrap(), opts),
+            None
+        );
     }
 }
